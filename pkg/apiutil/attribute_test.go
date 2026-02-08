@@ -18,6 +18,7 @@ package apiutil
 import (
 	"bytes"
 	"net/netip"
+	"slices"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -1543,4 +1544,106 @@ func TestFullCycleSRv6InformationSubTLV(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_LsAttribute(t *testing.T) {
+	assert := assert.New(t)
+
+	nodeFlags := api.LsNodeFlags{
+		Overload: false,
+		Attached: true,
+		External: true,
+		Abr:      true,
+		Router:   true,
+		V6:       true,
+	}
+	nodeSrCapabilities := api.LsSrCapabilities{
+		Ipv4Supported: true,
+		Ipv6Supported: true,
+		Ranges: []*api.LsSrRange{
+			{Begin: 20000, End: 24000},
+		},
+	}
+	nodeSrlb := api.LsSrLocalBlock{
+		Ranges: []*api.LsSrRange{
+			{Begin: 260000, End: 280000},
+		},
+	}
+	prefixFlags := api.LsIGPFlags{
+		Down:          false,
+		NoUnicast:     false,
+		LocalAddress:  true,
+		PropagateNssa: true,
+	}
+	epeFlags := api.LsBgpPeerSegmentSIDFlags{
+		Value:      true,
+		Local:      true,
+		Backup:     true,
+		Persistent: true,
+	}
+	epePeerNodeSid := api.LsBgpPeerSegmentSID{
+		Flags:  &epeFlags,
+		Weight: 0,
+		Sid:    23001,
+	}
+	epePeerAdjSid := api.LsBgpPeerSegmentSID{
+		Flags:  &epeFlags,
+		Weight: 1,
+		Sid:    270123,
+	}
+
+	input := &api.LsAttribute{
+		Node: &api.LsAttributeNode{
+			Name:            "rtr",
+			Opaque:          []byte{},
+			IsisArea:        []byte{0x72, 0x74, 0x72},
+			LocalRouterId:   "1.1.1.1",
+			LocalRouterIdV6: "2001:db8:1::1",
+			SrAlgorithms:    []byte{0x00},
+			Flags:           &nodeFlags,
+			SrCapabilities:  &nodeSrCapabilities,
+			SrLocalBlock:    &nodeSrlb,
+		},
+
+		Link: &api.LsAttributeLink{
+			Name:                "rtr1-rtr2",
+			Opaque:              []byte{},
+			LocalRouterId:       "1.1.1.1",
+			LocalRouterIdV6:     "2001:db8:1::1",
+			RemoteRouterId:      "2.2.2.2",
+			RemoteRouterIdV6:    "2001:db8:1::2",
+			AdminGroup:          4,
+			DefaultTeMetric:     100,
+			IgpMetric:           150,
+			Bandwidth:           12500000.0,
+			ReservableBandwidth: 1250000.0,
+			UnreservedBandwidth: slices.Repeat([]float32{1250000.0}, 8),
+			SrAdjacencySid:      262263,
+			Srlgs:               []uint32{1, 6},
+			Srv6EndXSid:         nil,
+		},
+
+		Prefix: &api.LsAttributePrefix{
+			IgpFlags:    &prefixFlags,
+			Opaque:      []byte{},
+			SrPrefixSid: 22001,
+		},
+
+		BgpPeerSegment: &api.LsAttributeBgpPeerSegment{
+			BgpPeerNodeSid:      &epePeerNodeSid,
+			BgpPeerAdjacencySid: &epePeerAdjSid,
+			BgpPeerSetSid:       nil,
+		},
+	}
+
+	a := &api.Attribute{Attr: &api.Attribute_Ls{Ls: input}}
+	n, err := UnmarshalAttribute(a)
+	assert.NoError(err)
+
+	output, _ := NewLsAttributeFromNative(n.(*bgp.PathAttributeLs))
+
+	assert.True(proto.Equal(input.Node, output.Node))
+	assert.True(proto.Equal(input.Link, output.Link))
+	assert.True(proto.Equal(input.Prefix, output.Prefix))
+	assert.True(proto.Equal(input.BgpPeerSegment, output.BgpPeerSegment))
 }
